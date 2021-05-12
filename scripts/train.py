@@ -1,25 +1,14 @@
 from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments
-from transformers.trainer_utils import get_last_checkpoint
-
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from datasets import load_from_disk
+import random
 import logging
 import sys
 import argparse
 import os
-
-# Set up logging
-logger = logging.getLogger(__name__)
-
-logging.basicConfig(
-    level=logging.getLevelName("INFO"),
-    handlers=[logging.StreamHandler(sys.stdout)],
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+import torch
 
 if __name__ == "__main__":
-
-    logger.info(sys.argv)
 
     parser = argparse.ArgumentParser()
 
@@ -30,7 +19,6 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps", type=int, default=500)
     parser.add_argument("--model_name", type=str)
     parser.add_argument("--learning_rate", type=str, default=5e-5)
-    parser.add_argument("--output_dir", type=str)
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -40,6 +28,15 @@ if __name__ == "__main__":
     parser.add_argument("--test_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
 
     args, _ = parser.parse_known_args()
+
+    # Set up logging
+    logger = logging.getLogger(__name__)
+
+    logging.basicConfig(
+        level=logging.getLevelName("INFO"),
+        handlers=[logging.StreamHandler(sys.stdout)],
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
     # load datasets
     train_dataset = load_from_disk(args.training_dir)
@@ -61,7 +58,7 @@ if __name__ == "__main__":
 
     # define training args
     training_args = TrainingArguments(
-        output_dir=args.output_dir,
+        output_dir=args.model_dir,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
@@ -81,12 +78,8 @@ if __name__ == "__main__":
     )
 
     # train model
-    if get_last_checkpoint(args.output_dir) is not None:
-        logger.info("***** continue training *****")
-        last_checkpoint = get_last_checkpoint(args.output_dir)
-        trainer.train(resume_from_checkpoint=last_checkpoint)
-    else:
-        trainer.train()
+    trainer.train()
+
     # evaluate model
     eval_result = trainer.evaluate(eval_dataset=test_dataset)
 
@@ -98,3 +91,4 @@ if __name__ == "__main__":
 
     # Saves the model to s3
     trainer.save_model(args.model_dir)
+
