@@ -1,12 +1,14 @@
-from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-from datasets import load_from_disk
-import random
+"""
+Training script for Hugging Face SageMaker Estimator
+"""
 import logging
 import sys
 import argparse
 import os
-import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import Trainer, TrainingArguments
+from datasets import load_from_disk
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 if __name__ == "__main__":
 
@@ -18,6 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("--eval-batch-size", type=int, default=64)
     parser.add_argument("--warmup_steps", type=int, default=500)
     parser.add_argument("--model_name", type=str)
+    parser.add_argument("--tokenizer_name", type=str)
     parser.add_argument("--learning_rate", type=str, default=5e-5)
 
     # Data, model, and output directories
@@ -42,19 +45,21 @@ if __name__ == "__main__":
     train_dataset = load_from_disk(args.training_dir)
     test_dataset = load_from_disk(args.test_dir)
 
-    logger.info(f" loaded train_dataset length is: {len(train_dataset)}")
-    logger.info(f" loaded test_dataset length is: {len(test_dataset)}")
+    logger.info("loaded train_dataset length is: %s", len(train_dataset))
+    logger.info("loaded test_dataset length is: %s", len(test_dataset))
 
-    # compute metrics function for binary classification
     def compute_metrics(pred):
+        """Compute metrics function for binary classification"""
         labels = pred.label_ids
         preds = pred.predictions.argmax(-1)
-        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary")
+        precision, recall, f_1, _ = precision_recall_fscore_support(labels, preds, average="binary")
         acc = accuracy_score(labels, preds)
-        return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
+        return {"accuracy": acc, "f1": f_1, "precision": precision, "recall": recall}
 
-    # download model from model hub
+    # download model and tokenizer from model hub
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+
 
     # define training args
     training_args = TrainingArguments(
@@ -75,6 +80,7 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        tokenizer=tokenizer,
     )
 
     # train model
@@ -85,10 +91,9 @@ if __name__ == "__main__":
 
     # writes eval result to file which can be accessed later in s3 ouput
     with open(os.path.join(args.output_data_dir, "eval_results.txt"), "w") as writer:
-        print(f"***** Eval results *****")
+        print("***** Eval results *****")
         for key, value in sorted(eval_result.items()):
             writer.write(f"{key} = {value}\n")
 
     # Saves the model to s3
     trainer.save_model(args.model_dir)
-
